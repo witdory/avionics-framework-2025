@@ -14,7 +14,6 @@ This project provides a framework for Arduino to quickly build and maintain Rock
 
 ## software architecture
 <img src="images/arc.png">
-<img src="images/uml.png">
 
 ## packet architecture
 In order to reduce unnecessary bit transmission during the communication process and ensure communication reliability and real-time, packets were designed and protocols were created.
@@ -22,6 +21,9 @@ In order to reduce unnecessary bit transmission during the communication process
 Data types are classified as follows. At this time, rocketstate, cmd, etc. must transmit and receive data accurately, so like the TCP protocol, when data is received from the receiver, it sends an ACK to the transmitter. If the ACK is not received from the transmitter, it is designed to transmit the data one more time. Like sensor telemetry, it sends an ACK to the transmitter. Data where real-time is important were excluded from this process.
 <img src="images/datatype.png">
 <img src="images/trust.png">
+
+## uml
+<img src="images/uml.png">
 
 ## hardware
 The hardware basically consists of GPS, IMU, barometer, SD reader, motor, and communication module. In addition, the user can replace and add sensors as needed. The initial version of the hardware used a breadboard, and the latest version had a new PCB design to increase stability.
