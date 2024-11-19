@@ -14,6 +14,7 @@ This project provides a framework for Arduino to quickly build and maintain Rock
 
 ## software architecture
 <img src="images/arc.png">
+<img src="images/uml.png">
 
 ## packet architecture
 In order to reduce unnecessary bit transmission during the communication process and ensure communication reliability and real-time, packets were designed and protocols were created.
