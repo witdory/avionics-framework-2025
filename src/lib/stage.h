@@ -5,5 +5,6 @@ typedef enum
     READY,
     ASCENDING,
     APOGEE,
-    DESCENDING
+    DESCENDING,
+    RETRIEVAL
 } Stage;

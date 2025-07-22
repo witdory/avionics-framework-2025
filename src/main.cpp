@@ -1,24 +1,20 @@
 #include "modules.h"
 
+me310::ME310 modem;
+
 ALTEMETER alt(READ_ONLY, 1);
-GPS gps(READ_ONLY, 2);
+GPS gps(READ_ONLY, 2, &modem);
 IMU bno(READ_ONLY, 6);
-Xbee xbee(READ_AND_WRITE);
-MOTOR pitch_motor1(WRITE_ONLY, 15, 7);
-MOTOR pitch_motor2(WRITE_ONLY, 15, 6);
-MOTOR yaw_motor1(WRITE_ONLY, 15, 5);
-MOTOR yaw_motor2(WRITE_ONLY, 15, 4);
 MOTOR parachute_motor(WRITE_ONLY, 180, 3);
 LOGGER logger(53);
 Stage stage;
 
-Carnard canard(&pitch_motor1, &pitch_motor2, &yaw_motor1, &yaw_motor2, &bno);
 Parachute parachute(&parachute_motor);
-Transmit transmit(&bno, &alt, &gps, &xbee, &logger);
+Transmit transmit(&bno, &alt, &gps, &logger, &modem);
 UpdateSensor updatesensor(&bno, &alt, &gps);
 StageChecker stagecheck(&bno, &alt, &gps, &stage,&logger);
 
-// 지상국 코드
+// \uc774\uc9c0\uc0c1\uad6d \ucf54\ub4dc
 
 //Recieve recieve(&xbee);
 
@@ -28,128 +24,92 @@ void setup(){
     initTime = millis();
     // 초기 stage INIT으로 초기화
     stage = INIT;
-
     pinMode(13, HIGH);
     digitalWrite(13, HIGH);
 
     // 센서들 연결 및 초기화
     Serial.begin(115200);
-    Serial3.begin(9600);
     Serial.println("INIT");
-    gps.init();
+    gps.init(); // GPS init is always called
     Serial.println("GPS DONE");
     bno.init();
     Serial.println("IMU DONE");
     alt.init();
     Serial.println("ALT DONE");
-
     logger.init();
     Serial.println("SD DONE");
-
-    pitch_motor1.init();
-    pitch_motor2.init();
-    yaw_motor1.init();
-    yaw_motor2.init();
     parachute_motor.init2();
     Serial.println("MOTOR");
 
+    if(lte_init(modem, APN)){
+        Serial.println("LTE DONE");
+    } else {
+        Serial.println("LTE FAILED");
+    }
+
     // 지상국으로 초기화 완료 되었다고 데이터 전송
     Serial.println("INIT");
-    // 잠시 대기
     delay(100);
-    Serial3.println("Stage,INIT");
+    Serial.println("Stage,INIT");
     String log = "INIT\n";
     logger.writeData(log);
     digitalWrite(13, LOW);
 }
 
 void loop(){
-    // 지상국으로 부터 데이터 오는 지 확인, 있으면 해당 명령 수행
     Serial.print("Stage: ");
     Serial.println(stage);
 
-    if(Serial3.available()){
-        Serial.println("Recieve");
-        String command = Serial3.readStringUntil('\n');
-        Serial.print("command: ");
-        Serial.print(command);
+    // HTTP GET으로 서버에서 명령 받아오기
+    char commandBuf[32] = {0};
+    if (lte_http_get_command(modem, APN, SERVER, PORT, "/command", commandBuf, sizeof(commandBuf))) {
+        String command = String(commandBuf);
         command.trim();
-        //delay(5000);
-        delay(100);
-        String logging = "command,";
-        logging += command+"\n";
-        logger.writeData(logging);
-        if (command == "Ready"){
-            //센서 초기화
-
-            // stage 변경
+        if (command == "Ready") {
             stage = READY;
-
-            // 지상국으로 상태 변경 알림
-            Serial3.println("Stage,Ready");
-        }
-
-        else if(command == "Injection"){
-            // 낙하산 강제 사출
+            transmit.sendRocketState(stage);
+        } else if (command == "Injection") {
             //parachute.run();
-
-            // stage 변경
             stage = APOGEE;
-
-            // 지상국으로 상태 변경 알림
-            Serial3.println("Stage,APOGEE");
-        }
-
-        else if(command == "StageChange"){
-            String log;
+            transmit.sendRocketState(stage);
+        } else if (command == "StageChange") {
             switch (stage)
             {
             case INIT:
                 stage = READY;
-                Serial3.println("Stage,Ready");
-                log = "READY\n";
-                logger.writeData(log);
+                transmit.sendRocketState(stage);
                 break;
             case READY:
                 stage = ASCENDING;
                 stagecheck.setAscendingTime(millis());
-                Serial3.println("Stage,Ascending");
-                log = "ASCENDING\n";
-                logger.writeData(log);
+                transmit.sendRocketState(stage);
                 break;
             case ASCENDING:
                 stage = APOGEE;
-                Serial3.println("Stage,Apogee");
-                log = "APOGEE\n";
-                logger.writeData(log);
+                transmit.sendRocketState(stage);
                 break;
             case APOGEE:
                 stage = DESCENDING;
-                Serial3.println("Stage,Descending");
-                log = "DESCENDING\n";
-                logger.writeData(log);
+                transmit.sendRocketState(stage);
                 break;
             default:
                 break;
             }
-
         }
-
-        else{
-            Serial3.println("Undefined Command");
-        }
+        // 기타 명령 처리
     }
+
     if(stage == INIT){
-        updatesensor.run();
-        transmit.sendSensorData();
+        updatesensor.run(stage);
+        transmit.sendSensorData(stage);
     }
     if(stage == READY){
         // 텔레메트리 값 읽기 시작
         //Serial.println("READY START");
-        updatesensor.run();
+        updatesensor.run(stage);
         // 읽은 텔레메트리 값 전송 및 저장
         //Serial.println("updateSensor");
-        transmit.sendSensorData();
+        transmit.sendSensorData(stage);
         //Serial.println("Transmit");
         // 만약 가속도 값이 크게 변화하면 상태 ASCENDING으로 바꿈 및 상태 변경 패킷 전송 및 저장
         stagecheck.run();
@@ -157,32 +117,36 @@ void loop(){
     }
     else if(stage == ASCENDING){
         // 텔레메트리 값 읽기 시작
-        updatesensor.run();
+        updatesensor.run(stage);
         // 텔레메트리 값 전송 및 저장
         
         // 읽은 텔레메트리 값 전송 및 저장
-        transmit.sendSensorData();
+        transmit.sendSensorData(stage);
         // PID 제어
-        canard.run();
-
+        // canard.run();
         stagecheck.run();
-
     }
     else if(stage == APOGEE){
         // 텔레메트리 값 읽기 시작
-        updatesensor.run();
+        updatesensor.run(stage);
         // 낙하산 사출
         parachute.run();
         delay(100);
-        transmit.sendSensorData();
+        transmit.sendSensorData(stage);
 
         stagecheck.run();
     }
     else if(stage == DESCENDING){
         // 텔레메트리 값 읽기 시작
-        updatesensor.run();
+        updatesensor.run(stage);
         // 텔레메트리 값 전송 및 저장
-        transmit.sendSensorData();
+        transmit.sendSensorData(stage);
+    }
+    else if(stage == RETRIEVAL){
+        updatesensor.run(stage);
+        modem.gnss_controller_power_management(0);
+        transmit.sendSensorData(stage);
+        modem.gnss_controller_power_management(1);
     }
     return;
 }

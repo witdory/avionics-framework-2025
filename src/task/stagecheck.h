@@ -15,7 +15,7 @@ public:
     void run(){
         if(*_stage == READY){
             if(_imu->_data[5]>=10){
-                Serial3.println("Stage,ASCENDING");
+                Serial.println("Stage,ASCENDING");
                 *_stage = ASCENDING;
                 ascendingTime = millis();
                 String log = "ASCENDING\n";
@@ -28,7 +28,7 @@ public:
 
             // 1. pitch 혹은 yaw 값이 75도 이상 기울었을 때
             if(abs(int(_imu->_data[1])) >= 75 || abs(int(_imu->_data[2])) >= 75){
-                Serial3.println("Stage,APOGEE");
+                Serial.println("Stage,APOGEE");
                 *_stage = APOGEE;
                 String log = "APOGEE1\n";
                 _logger->writeData(log);
@@ -44,7 +44,7 @@ public:
 
             // 3. 타이머의 값이 발사 후 4초가 지났을때 (발사 시뮬레이터 기반으로 값 조정 예정)
             else if((millis()-ascendingTime)/1000>8){
-                Serial3.println("Stage,APOGEE");
+                Serial.println("Stage,APOGEE");
                 *_stage = APOGEE;
                 String log = "APOGEE3\n";
                 _logger->writeData(log);
@@ -53,7 +53,7 @@ public:
             return;
         }
         else if(*_stage == APOGEE){
-            Serial3.println("Stage,DESCENDING");
+            Serial.println("Stage,DESCENDING");
             *_stage = DESCENDING;
             String log = "DESCENDING\n";
             _logger->writeData(log);

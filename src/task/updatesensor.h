@@ -9,11 +9,13 @@ public:
         _gps = gps;
     }
 
-    inline void run(){
+    inline void run(Stage currentStage){
         //Serial.println("센서 업데이트 시작");
         _imu->readData();
         delay(30);
-        _gps->readData();
+        if (currentStage == RETRIEVAL) {
+            _gps->readData();
+        }
         delay(30);
         _alt->readData();
         delay(20);

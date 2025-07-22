@@ -1,39 +1,84 @@
 #pragma once
-#include <SoftwareSerial.h>
-#include <TinyGPS++.h>
+#include <Arduino.h>
+#include <ME310.h>
 #include "../lib/sensor.h"
+
+#define ON_OFF 2 // GNSS 모듈 ON/OFF 제어 핀 (필요에 따라 수정)
+#define MDMSerial Serial1 // ME310 모듈과 연결된 시리얼 포트
+
+using namespace me310;
 
 class GPS : public Sensor<float> {
 public:
-    //생성자
-    GPS(int8_t sensorMode, uint8_t datalength) : Sensor<float>(sensorMode, datalength){} //RX: 3번 핀, TX: 2번 핀
+    GPS(int8_t sensorMode, uint8_t datalength, ME310* modem)
+        : Sensor<float>(sensorMode, datalength), _modem(modem), lastTime(0) {}
 
-    //센서 초기화
-    void init() { //setup() 함수 기능
-        Serial2.begin(9600); //GPS 모듈과의 시리얼 통신 초기화
+    void init() {
+        MDMSerial.begin(115200);
+        delay(100);
+        _modem->debugMode(false);
+        _modem->module_reboot();
+        delay(10000);
+        _modem->powerOn(ON_OFF);
 
-        //GPS 모듈의 초기화가 별도로 필요하지 않으므로, 통신 설정만으로 초기화 완료
-        delay(1000); // 센서 안정화를 위해 잠시 대기
+        _modem->report_mobile_equipment_error(2);
+        _modem->read_gnss_configuration();
+        _modem->gnss_configuration(0, 0); // GNSS 우선
+        _modem->gnss_configuration(2, 1); // GPS+GLO
+        _modem->gnss_configuration(3, 0); // 런타임 GNSS 우선
+        _modem->gnss_controller_power_management(0); // GNSS 컨트롤러 OFF
 
-        lastTime = millis(); //현재 시간을 lastTime에 저장
+        lastTime = millis();
         _data[0] = 0.0;
         _data[1] = 0.0;
     }
 
-    //데이터 읽기
-    void readData() { //loop() 함수 기능
-        while (Serial2.available() > 0) {
-            gps.encode(Serial2.read());
-            if (gps.location.isUpdated()) {
-                //위도와 경도 값을 추출하여 data 배열에 저장
-                _data[0] = gps.location.lat(); //위도
-                _data[1] = gps.location.lng(); //경도
+    void readData() {
+        int retry = 0;
+        while (retry < 20) {
+            ME310::return_t rc = _modem->gps_get_acquired_position();
+            if (rc == ME310::RETURN_VALID) {
+                char* buff = (char*)_modem->buffer_cstr(1);
+                if (buff != nullptr) {
+                    float lat = 0.0, lng = 0.0;
+                    if (parseLatLng(buff, lat, lng)) {
+                        _data[0] = lat;
+                        _data[1] = lng;
+                        break;
+                    }
+                }
             }
+            delay(5000);
+            retry++;
         }
-        delay(10);
     }
 
 private:
-    TinyGPSPlus gps;
+    ME310* _modem;
     unsigned long lastTime;
+
+    // $GPSACP: 3723.2475,N,12158.3416,W,... 형식에서 위도/경도 추출
+    bool parseLatLng(const char* gpsStr, float& lat, float& lng) {
+        if (gpsStr == nullptr) return false;
+        const char* p = strchr(gpsStr, ':');
+        if (!p) return false;
+        float latRaw, lngRaw;
+        char latDir, lngDir;
+        int n = sscanf(p + 1, "%f,%c,%f,%c", &latRaw, &latDir, &lngRaw, &lngDir);
+        if (n == 4) {
+            lat = convertToDecimal(latRaw, latDir);
+            lng = convertToDecimal(lngRaw, lngDir);
+            return true;
+        }
+        return false;
+    }
+
+    // 위도/경도 변환 (ddmm.mmmm -> decimal)
+    float convertToDecimal(float raw, char dir) {
+        int deg = int(raw / 100);
+        float min = raw - deg * 100;
+        float dec = deg + min / 60.0;
+        if (dir == 'S' || dir == 'W') dec = -dec;
+        return dec;
+    }
 };
