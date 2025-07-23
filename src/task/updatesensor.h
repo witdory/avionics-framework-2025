@@ -10,7 +10,6 @@ public:
     }
 
     inline void run(Stage currentStage){
-        //Serial.println("센서 업데이트 시작");
         _imu->readData();
         delay(30);
         if (currentStage == RETRIEVAL) {

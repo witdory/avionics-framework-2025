@@ -1,7 +1,12 @@
-#pragma once
-#include "../modules.h"
+#include "../lib/sensor.h"
+#include "../lib/task.h"
+#include "../lib/stage.h"
+#include "../sensor/imu.h"
+#include "../sensor/altemeter.h"
+#include "../sensor/gps.h"
+#include "../sensor/logger.h"
 #include <Arduino.h>
-#include "../lte/lte_http.h"
+#include "../lte/HttpClient.h"
 
 #define SERVER "114.108.80.58"
 #define PORT 10025
@@ -9,13 +14,13 @@
 
 class Transmit : public Task{
 public:
-    Transmit(IMU *imu, ALTEMETER *alt, GPS *gps, LOGGER *logger, me310::ME310* modem)
+    Transmit(IMU *imu, ALTEMETER *alt, GPS *gps, LOGGER *logger, PersistentTCP* tcp)
     {
         _imu = imu;
         _alt = alt;
         _gps = gps;
         _logger = logger;
-        _modem = modem;
+        _tcp = tcp;
         _D_Len = (_imu->getDataLength() + _alt->getDataLength() + _gps->getDataLength())*4;
         _data = new uint8_t[_D_Len];
         _cnt = 0;
@@ -37,37 +42,23 @@ public:
         } else {
             data = String((*_imu)._data[0])+","+String((*_imu)._data[1])+","+String((*_imu)._data[2])+","+String((*_imu)._data[3])+","+String((*_imu)._data[4])+","+String((*_imu)._data[5])+","+String((*_alt)._data[0])+","+"0.0,0.0"; // Placeholder for GPS
         }
-        // Serial.println(data);
-        lte_http_post(*_modem, APN, SERVER, PORT, "/data", data.c_str());
+        _tcp->send(data.c_str());
         unsigned long currentTime = millis();
         String sensorlog = "1,"+String(currentTime)+","+data+"\n";
         log+=sensorlog;
         _cnt+=1;
         if(_cnt>=30){
             _cnt = 0;
+            Serial.println("Transmit: Writing log to SD card.");
             _logger->writeData(log);
             log = "";
         }
     }
 
-    // 로켓 상태 전송 (LTE HTTP POST)
-    void sendRocketState(Stage stage) {
-        String stageStr;
-        switch(stage) {
-            case INIT: stageStr = "INIT"; break;
-            case READY: stageStr = "READY"; break;
-            case ASCENDING: stageStr = "ASCENDING"; break;
-            case APOGEE: stageStr = "APOGEE"; break;
-            case DESCENDING: stageStr = "DESCENDING"; break;
-            default: stageStr = "UNKNOWN"; break;
-        }
-        lte_http_post(*_modem, APN, SERVER, PORT, "/state", stageStr.c_str());
-        Serial.print("Rocket state sent: ");
-        Serial.println(stageStr);
-    }
+    
 
 private:
-    me310::ME310* _modem;
+    PersistentTCP* _tcp;
     IMU *_imu;
     ALTEMETER *_alt;
     GPS *_gps;

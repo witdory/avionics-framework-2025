@@ -12,46 +12,40 @@ public:
 
     void init(){
         if (!SD.begin(_chipSelect)) {
-            //while(1);
+            Serial.println("SD card initialization failed!");
+            return; // Exit if SD card fails to initialize
         }
 
-        if(!SD.exists("logcnt.txt")){
-            File myFile = SD.open("logcnt.txt", FILE_WRITE);
-            myFile.println("1");
-            myFile.close();
+        // Ensure flightLogger.txt is cleared at the start of a new flight
+        if (SD.exists("flightLogger.txt")) {
+            SD.remove("flightLogger.txt");
         }
 
-        File myFile = SD.open("logcnt.txt", FILE_READ);
-        SD.remove("flightLogger.txt");
-        if (myFile) {
-            // 파일에서 한 줄 읽기
-            String numberString = myFile.readStringUntil('\n');
-            myFile.close();
-            // 문자열을 정수로 변환
-            int number = numberString.toInt();
-            Serial.print("파일에서 읽은 숫자: ");
-            Serial.println(number);
-
-            // 1을 더함
-            number += 1;
-
-            // 파일을 쓰기 모드로 다시 열기 (기존 내용 덮어쓰기)
-            SD.remove("logcnt.txt");
-            myFile = SD.open("logcnt.txt", FILE_WRITE);
-
+        int flightCount = 1;
+        if (SD.exists("logcnt.txt")) {
+            File myFile = SD.open("logcnt.txt", FILE_READ);
             if (myFile) {
-                myFile.println(number);
+                String numberString = myFile.readStringUntil('\n');
                 myFile.close();
-                Serial.print("파일에 기록한 숫자: ");
-                Serial.println(number);
+                flightCount = numberString.toInt();
+                if (flightCount == 0) flightCount = 1; // Handle case where file is empty or contains 0
             } else {
-                Serial.println("파일을 쓰기 모드로 열 수 없습니다.");
+                Serial.println("Error opening logcnt.txt for reading.");
             }
-            myFile.close();
-        } 
-        else {
-            Serial.println("파일을 열 수 없습니다.");
         }
+        
+        // Increment flight count for the new flight
+        flightCount++;
+
+        // Write updated flight count back to logcnt.txt
+        File myFile = SD.open("logcnt.txt", FILE_WRITE);
+        if (myFile) {
+            myFile.println(flightCount);
+            myFile.close();
+        } else {
+            Serial.println("Error opening logcnt.txt for writing.");
+        }
+        return;
         return;
     }
 

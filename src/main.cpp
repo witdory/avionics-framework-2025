@@ -1,16 +1,19 @@
 #include "modules.h"
+#include "task/transmit.h"
 
-me310::ME310 modem;
+Modem modem;
+HttpClient httpClient(&modem);
+PersistentTCP tcp(&modem, "114.108.80.58", 10025);
 
 ALTEMETER alt(READ_ONLY, 1);
-GPS gps(READ_ONLY, 2, &modem);
+GPS gps(READ_ONLY, 2, modem.getModem());
 IMU bno(READ_ONLY, 6);
 MOTOR parachute_motor(WRITE_ONLY, 180, 3);
 LOGGER logger(53);
 Stage stage;
 
 Parachute parachute(&parachute_motor);
-Transmit transmit(&bno, &alt, &gps, &logger, &modem);
+Transmit transmit(&bno, &alt, &gps, &logger, &tcp);
 UpdateSensor updatesensor(&bno, &alt, &gps);
 StageChecker stagecheck(&bno, &alt, &gps, &stage,&logger);
 
@@ -41,10 +44,18 @@ void setup(){
     // parachute_motor.init2();
     Serial.println("MOTOR");
 
-    if(lte_init(modem, APN)){
+    if(modem.init(APN)){
         Serial.println("LTE DONE");
     } else {
         Serial.println("LTE FAILED");
+    }
+    if (tcp.connect()) {
+        Serial.println("TCP 연결 성공!");
+        // TCP 연결 성공 후 초기 상태를 서버로 전송
+        String stageStr = "INIT";
+        httpClient.post(SERVER, 8000, "/state", stageStr.c_str());
+    } else {
+        Serial.println("TCP 연결 실패");
     }
 
     // 지상국으로 초기화 완료 되었다고 데이터 전송
@@ -58,46 +69,55 @@ void setup(){
 }
 
 void loop(){
-    Serial.print("Stage: ");
-    Serial.println(stage);
+    // Serial.print("Stage: ");
+    // Serial.println(stage);
 
     // HTTP GET으로 서버에서 명령 받아오기
-    char commandBuf[32] = {0};
-    Serial.println("[Out if]");
-    if (lte_http_get_command(modem, APN, SERVER, PORT, "/command", commandBuf, sizeof(commandBuf))) {
-        Serial.println("[In if]");
-        String command = String(commandBuf);
-        command.trim();
+    // Serial.println("[Out if]");
+    String command = tcp.receive();
+    command.trim();
+    if (command.length() > 0) {
+        // Serial.println("[In if]");
         if (command == "Ready") {
             stage = READY;
-            transmit.sendRocketState(stage);
+            String stageStr = "READY";
+            httpClient.post(SERVER, 8000, "/state", stageStr.c_str());
         } else if (command == "Injection") {
             //parachute.run();
             stage = APOGEE;
-            transmit.sendRocketState(stage);
+            String stageStr = "APOGEE";
+            httpClient.post(SERVER, 8000, "/state", stageStr.c_str());
         } else if (command == "StageChange") {
             switch (stage)
             {
-            case INIT:
+            case INIT: {
                 stage = READY;
-                transmit.sendRocketState(stage);
-                break;
-            case READY:
-                stage = ASCENDING;
-                stagecheck.setAscendingTime(millis());
-                transmit.sendRocketState(stage);
-                break;
-            case ASCENDING:
-                stage = APOGEE;
-                transmit.sendRocketState(stage);
-                break;
-            case APOGEE:
-                stage = DESCENDING;
-                transmit.sendRocketState(stage);
-                break;
-            default:
+                String stageStrInit = "READY";
+                httpClient.post(SERVER, 8000, "/state", stageStrInit.c_str());
                 break;
             }
+            case READY: {
+                stage = ASCENDING;
+                stagecheck.setAscendingTime(millis());
+                String stageStrReady = "ASCENDING";
+                httpClient.post(SERVER, 8000, "/state", stageStrReady.c_str());
+                break;
+            }
+            case ASCENDING: {
+                stage = APOGEE;
+                String stageStrAscending = "APOGEE";
+                httpClient.post(SERVER, 8000, "/state", stageStrAscending.c_str());
+                break;
+            }
+            case APOGEE: {
+                stage = DESCENDING;
+                String stageStrApogee = "DESCENDING";
+                httpClient.post(SERVER, 8000, "/state", stageStrApogee.c_str());
+                break;
+            }
+            default: {
+                break;
+            }}
         }
         // 기타 명령 처리
     }
@@ -108,15 +128,15 @@ void loop(){
     }
     if(stage == READY){
         // 텔레메트리 값 읽기 시작
-        Serial.println("READY START");
+        // Serial.println("READY START");
         updatesensor.run(stage);
         // 읽은 텔레메트리 값 전송 및 저장
-        Serial.println("updateSensor");
+        // Serial.println("updateSensor");
         transmit.sendSensorData(stage);
-        Serial.println("Transmit");
+        // Serial.println("Transmit");
         // 만약 가속도 값이 크게 변화하면 상태 ASCENDING으로 바꿈 및 상태 변경 패킷 전송 및 저장
         stagecheck.run();
-        Serial.println("Ready finish");
+        // Serial.println("Ready finish");
     }
     else if(stage == ASCENDING){
         // 텔레메트리 값 읽기 시작
@@ -147,9 +167,9 @@ void loop(){
     }
     else if(stage == RETRIEVAL){
         updatesensor.run(stage);
-        modem.gnss_controller_power_management(0);
+        modem.getModem()->gnss_controller_power_management(0);
         transmit.sendSensorData(stage);
-        modem.gnss_controller_power_management(1);
+        modem.getModem()->gnss_controller_power_management(1);
     }
     // return;
     delay(100);

@@ -53,12 +53,14 @@ public:
             return;
         }
         else if(*_stage == APOGEE){
-            Serial.println("Stage,DESCENDING");
-            *_stage = DESCENDING;
-            String log = "DESCENDING\n";
-            _logger->writeData(log);
+            if (!_apogeeToDescendingTransitioned) {
+                Serial.println("Stage,DESCENDING");
+                *_stage = DESCENDING;
+                String log = "DESCENDING\n";
+                _logger->writeData(log);
+                _apogeeToDescendingTransitioned = true; // Set flag to prevent repeated transition
+            }
             return;
-
         }
     }
 
@@ -74,4 +76,5 @@ private:
     LOGGER *_logger;
 
     unsigned long ascendingTime;
+    bool _apogeeToDescendingTransitioned = false; // New flag to control transition
 };

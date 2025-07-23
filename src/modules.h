@@ -17,5 +17,6 @@
 #include"task/updatesensor.h"
 #include"task/parachute.h"
 #include"task/recieve.h"
-#include"task/transmit.h"
 #include"task/stagecheck.h"
+#include "lte/persistent_tcp.h"
+#include "lte/HttpClient.h"

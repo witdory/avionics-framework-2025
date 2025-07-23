@@ -1,6 +1,13 @@
 #pragma once
 #include <ME310.h>
 
-extern me310::ME310 modem;
+class Modem {
+public:
+    Modem();
+    bool init(const char* apn);
+    me310::ME310* getModem();
+    
 
-bool lte_init(me310::ME310& modem, const char* apn);
+private:
+    me310::ME310 _modem;
+};
