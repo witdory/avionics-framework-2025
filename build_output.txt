@@ -24,11 +24,12 @@ Dependency Graph
 |-- ME310G1 @ 0.1.0+sha.9dcccfb
 |-- Wire
 Building in release mode
+Compiling .pio\build\uno_r4_minima\src\lte\persistent_tcp.cpp.o
 Compiling .pio\build\uno_r4_minima\src\main.cpp.o
 Linking .pio\build\uno_r4_minima\firmware.elf
 Checking size .pio\build\uno_r4_minima\firmware.elf
 Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
 RAM:   [===       ]  30.7% (used 10060 bytes from 32768 bytes)
-Flash: [====      ]  35.2% (used 92392 bytes from 262144 bytes)
+Flash: [===       ]  34.9% (used 91456 bytes from 262144 bytes)
 Building .pio\build\uno_r4_minima\firmware.bin
-========================= [SUCCESS] Took 2.42 seconds =========================
+========================= [SUCCESS] Took 2.47 seconds =========================

@@ -42,7 +42,8 @@ public:
         } else {
             data = String((*_imu)._data[0])+","+String((*_imu)._data[1])+","+String((*_imu)._data[2])+","+String((*_imu)._data[3])+","+String((*_imu)._data[4])+","+String((*_imu)._data[5])+","+String((*_alt)._data[0])+","+"0.0,0.0"; // Placeholder for GPS
         }
-        _tcp->send(data.c_str());
+        _tcp->send(("SENSOR_DATA:" + data).c_str());
+        _tcp->receive(); // SENSOR_DATA 전송에 대한 모뎀 응답을 소비
         unsigned long currentTime = millis();
         String sensorlog = "1,"+String(currentTime)+","+data+"\n";
         log+=sensorlog;

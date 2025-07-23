@@ -26,10 +26,8 @@ bool PersistentTCP::send(const char* data) {
 }
 
 void PersistentTCP::close() {
-    Serial.println("PersistentTCP: Closing connection.");
     _modem->getModem()->socket_listen(_connID, 0, _port);
     _connected = false;
-    Serial.println("PersistentTCP: Connection closed.");
 }
 
 bool PersistentTCP::isConnected() {
