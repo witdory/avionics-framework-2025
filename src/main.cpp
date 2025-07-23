@@ -32,13 +32,13 @@ void setup(){
     Serial.println("INIT");
     gps.init(); // GPS init is always called
     Serial.println("GPS DONE");
-    bno.init();
+    // bno.init();
     Serial.println("IMU DONE");
-    alt.init();
+    // alt.init();
     Serial.println("ALT DONE");
-    logger.init();
+    // logger.init();
     Serial.println("SD DONE");
-    parachute_motor.init2();
+    // parachute_motor.init2();
     Serial.println("MOTOR");
 
     if(lte_init(modem, APN)){
@@ -52,8 +52,9 @@ void setup(){
     delay(100);
     Serial.println("Stage,INIT");
     String log = "INIT\n";
-    logger.writeData(log);
+    // logger.writeData(log);
     digitalWrite(13, LOW);
+    
 }
 
 void loop(){
@@ -62,7 +63,9 @@ void loop(){
 
     // HTTP GET으로 서버에서 명령 받아오기
     char commandBuf[32] = {0};
+    Serial.println("[Out if]");
     if (lte_http_get_command(modem, APN, SERVER, PORT, "/command", commandBuf, sizeof(commandBuf))) {
+        Serial.println("[In if]");
         String command = String(commandBuf);
         command.trim();
         if (command == "Ready") {
@@ -105,19 +108,19 @@ void loop(){
     }
     if(stage == READY){
         // 텔레메트리 값 읽기 시작
-        //Serial.println("READY START");
+        Serial.println("READY START");
         updatesensor.run(stage);
         // 읽은 텔레메트리 값 전송 및 저장
-        //Serial.println("updateSensor");
+        Serial.println("updateSensor");
         transmit.sendSensorData(stage);
-        //Serial.println("Transmit");
+        Serial.println("Transmit");
         // 만약 가속도 값이 크게 변화하면 상태 ASCENDING으로 바꿈 및 상태 변경 패킷 전송 및 저장
         stagecheck.run();
-        //Serial.println("REady finish");
+        Serial.println("Ready finish");
     }
     else if(stage == ASCENDING){
         // 텔레메트리 값 읽기 시작
-        updatesensor.run(stage);
+        updatesensor.run(stage);    
         // 텔레메트리 값 전송 및 저장
         
         // 읽은 텔레메트리 값 전송 및 저장
@@ -148,5 +151,6 @@ void loop(){
         transmit.sendSensorData(stage);
         modem.gnss_controller_power_management(1);
     }
-    return;
+    // return;
+    delay(100);
 }
