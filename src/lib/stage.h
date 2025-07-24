@@ -2,6 +2,7 @@
 typedef enum
 {
     INIT,
+    CALIBRATION,
     READY,
     ASCENDING,
     APOGEE,

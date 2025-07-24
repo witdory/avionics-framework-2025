@@ -10,7 +10,7 @@ bool Modem::init(const char* apn) {
 
     Serial.println("------ [ME310 초기화 및 네트워크 연결] ------");
     _modem.module_reboot();
-    delay(10000);
+    delay(5000);
     _modem.powerOn(2);
     _modem.report_mobile_equipment_error(2);
 

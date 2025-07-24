@@ -29,6 +29,7 @@ public:
             // 1. pitch 혹은 yaw 값이 75도 이상 기울었을 때
             if(abs(int(_imu->_data[1])) >= 75 || abs(int(_imu->_data[2])) >= 75){
                 Serial.println("Stage,APOGEE");
+                Serial.println(abs(int(_imu->_data[1])));
                 *_stage = APOGEE;
                 String log = "APOGEE1\n";
                 _logger->writeData(log);

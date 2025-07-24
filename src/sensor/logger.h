@@ -7,7 +7,7 @@ class LOGGER : public Sensor<bool>{
 public:
     LOGGER(int chipSelect) : Sensor<bool>(READ_AND_WRITE) {
         _chipSelect = chipSelect;
-        filename = "flightLogger.txt";
+        filename = "flightLogger.txt"; // This seems to be unused, consider removing if not needed.
     }
 
     void init(){
@@ -16,9 +16,9 @@ public:
             return; // Exit if SD card fails to initialize
         }
 
-        // Ensure flightLogger.txt is cleared at the start of a new flight
-        if (SD.exists("flightLogger.txt")) {
-            SD.remove("flightLogger.txt");
+        // Ensure log.txt is cleared at the start of a new flight
+        if (SD.exists("log.txt")) {
+            SD.remove("log.txt");
         }
 
         int flightCount = 1;
@@ -46,7 +46,6 @@ public:
             Serial.println("Error opening logcnt.txt for writing.");
         }
         return;
-        return;
     }
 
     void writeData(String data){
@@ -62,20 +61,36 @@ public:
         }
     }
 
-    void readData(){
-        File dataFile = SD.open("flightLogger.txt", FILE_READ);
-        if (dataFile) {
-            Serial.println("Reading from file:");
-            while (dataFile.available()) {
-                Serial.write(dataFile.read());
+    bool openLogFileForReading() {
+        _logFile = SD.open("log.txt", FILE_READ);
+        if (!_logFile) {
+            Serial.println("Error opening log.txt for reading.");
+            return false;
+        }
+        return true;
+    }
+
+    String readDataChunk(int numLines) {
+        String chunk = "";
+        int linesRead = 0;
+        while (_logFile.available() && linesRead < numLines) {
+            chunk += _logFile.readStringUntil('\n');
+            if (_logFile.peek() != -1) { // Add newline if not the end of file
+                chunk += '\n';
             }
-            dataFile.close();
-        } else {
-            Serial.println("Error opening file for reading.");
+            linesRead++;
+        }
+        return chunk;
+    }
+
+    void closeLogFileForReading() {
+        if (_logFile) {
+            _logFile.close();
         }
     }
 
 private:
     int _chipSelect;
     String filename;
+    File _logFile;
 };

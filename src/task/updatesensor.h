@@ -20,6 +20,11 @@ public:
         delay(20);
     }
 
+    void calibration(){
+        //센서들 캘리브레이션 코드 작성할것
+    }
+
+
 private:
     IMU *_imu;
     ALTEMETER *_alt;

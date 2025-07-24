@@ -42,21 +42,51 @@ public:
         } else {
             data = String((*_imu)._data[0])+","+String((*_imu)._data[1])+","+String((*_imu)._data[2])+","+String((*_imu)._data[3])+","+String((*_imu)._data[4])+","+String((*_imu)._data[5])+","+String((*_alt)._data[0])+","+"0.0,0.0"; // Placeholder for GPS
         }
-        _tcp->send(("SENSOR_DATA:" + data).c_str());
-        _tcp->receive(); // SENSOR_DATA 전송에 대한 모뎀 응답을 소비
+        
         unsigned long currentTime = millis();
-        String sensorlog = "1,"+String(currentTime)+","+data+"\n";
+        String sensorlog = currentStage+","+String(currentTime)+","+data+"\n";
         log+=sensorlog;
+
         _cnt+=1;
         if(_cnt>=30){
             _cnt = 0;
             Serial.println("Transmit: Writing log to SD card.");
             _logger->writeData(log);
-            log = "";
+            // ASCENDING 단계에서는 서버로 전송하지 않음
+            if (currentStage >= APOGEE){
+                _tcp->send(("SENSOR_DATA:" + log).c_str()); // SENSOR_DATA 접두사 추가
+                _tcp->receive(); // 응답 소비
+            }
+            log = ""; // SD 카드에 쓴 후 버퍼 비우기
         }
     }
 
-    
+    void sendSdCardDataToServer() {
+        Serial.println("Transmit: Starting SD card data transfer to server.");
+        if (_logger->openLogFileForReading()) {
+            String dataChunk;
+            const int linesPerChunk = 20; // 10~30줄 사이, 20줄로 설정
+            int chunkCount = 0;
+            while (true) {
+                dataChunk = _logger->readDataChunk(linesPerChunk);
+                if (dataChunk.length() == 0) {
+                    break; // End of file
+                }
+                Serial.print("Transmit: Sending chunk ");
+                Serial.print(++chunkCount);
+                Serial.print(" (length: ");
+                Serial.print(dataChunk.length());
+                Serial.println(") to server.");
+                _tcp->send(("SD_DATA_CHUNK:" + dataChunk).c_str()); // SD_DATA_CHUNK 접두사 추가
+                _tcp->receive(); // 응답 소비
+                delay(100); // 서버 부하를 줄이기 위한 딜레이
+            }
+            _logger->closeLogFileForReading();
+            Serial.println("Transmit: Finished SD card data transfer.");
+        } else {
+            Serial.println("Transmit: Failed to open log.txt for reading.");
+        }
+    }
 
 private:
     PersistentTCP* _tcp;
