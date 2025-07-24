@@ -43,8 +43,8 @@ public:
         float current_raw_altitude = bmp.readAltitude(SEALEVELPRESSURE_HPA);
         float altitude = current_raw_altitude - initialAltitude;
         _data[0] = altitude;
-        Serial.print("Raw Altitude: "); Serial.print(current_raw_altitude);
-        Serial.print(", Calculated Altitude: "); Serial.println(altitude);
+        // Serial.print("Raw Altitude: "); Serial.print(current_raw_altitude);
+        // Serial.print(", Calculated Altitude: "); Serial.println(altitude);
         delay(10);
     }
 

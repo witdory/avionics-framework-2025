@@ -3,8 +3,8 @@
 #include <SoftwareSerial.h>
 
 // Pin definitions
-#define MPU_RX 6
-#define MPU_TX 5
+#define MPU_RX 5
+#define MPU_TX 6
 #define BMP_CS 10
 #define SD_CS 8
 #define PARACHUTE_PIN 9
@@ -17,7 +17,7 @@ PersistentTCP tcp(&modem, "114.108.80.58", 10025);
 
 ALTEMETER alt(READ_ONLY, 1, BMP_CS);
 GPS gps(READ_ONLY, 2, modem.getModem());
-IMU imu(READ_ONLY, 3, MPU_RX, MPU_TX);
+IMU imu(READ_ONLY, 3);
 MOTOR parachute_motor(WRITE_ONLY, 180, PARACHUTE_PIN);
 LOGGER logger(SD_CS);
 Stage stage;
@@ -36,6 +36,8 @@ StageChecker stagecheck(&imu, &alt, &gps, &stage,&logger);
 unsigned long initTime, currentTime; 
 
 void getCommand(String command){
+    Serial.print("getCommand called with: ");
+    Serial.println(command);
     if (command == "Ready") {
         stage = READY;
         Serial.println("Stage changed to: READY (from Ready command)");
@@ -121,13 +123,17 @@ void setup(){
     } else {
         Serial.println("LTE FAILED");
     }
+
+    Serial.println("Attempting TCP connect...");
     if (tcp.connect()) {
         Serial.println("TCP 연결 성공!");
         // TCP 연결 성공 후 초기 상태를 서버로 HTTP POST 전송 (포트 8000)
         String stageStr = "INIT";
         // httpClient.post(SERVER, 8000, "/state", stageStr.c_str());
         // TCP 연결 성공 후 초기 상태를 PersistentTCP (포트 10025)로 전송
+        Serial.println("Sending INIT_STATE:INIT...");
         tcp.send("INIT_STATE:INIT");
+        Serial.println("INIT_STATE:INIT sent.");
     } else {
         Serial.println("TCP 연결 실패");
     }
@@ -139,8 +145,11 @@ void setup(){
     String log = "INIT\n";
     // logger.writeData(log);
     digitalWrite(13, LOW);
+
+    
     
 }
+
 
 void loop(){
     Serial.print("Stage: ");
@@ -149,17 +158,28 @@ void loop(){
     
 
     if(stage == INIT){
+        // Serial.println("Entering INIT stage block.");
         updatesensor.run(stage);
 
+        // Serial.println("Sending COMMAND_REQUEST:STAGE:INIT...");
         tcp.send("COMMAND_REQUEST:STAGE:INIT"); // 서버에 명령 요청 메시지 전송
+        // Serial.println("COMMAND_REQUEST:STAGE:INIT sent. Waiting for response...");
         String command = tcp.receive();
         command.trim();
+        // Serial.print("Received command (length ");
+        // Serial.print(command.length());
+        // Serial.print("): <");
+        // Serial.print(command);
+        // Serial.println(">");
+
         if (command.length() > 0){
             // "OK" 접두사가 있다면 제거
             if (command.startsWith("OK")) {
                 command = command.substring(2); // "OK" (2글자) 제거
             }
             getCommand(command);
+        } else {
+            Serial.println("No command received or command was empty.");
         }
         // INIT -> CALIBRATION 는 지상국 통해서만만
 
@@ -171,21 +191,26 @@ void loop(){
         tcp.send("COMMAND_REQUEST:STAGE:CALIBRATION"); // 서버에 명령 요청 메시지 전송
         String command = tcp.receive();
         command.trim();
+        
+
         if (command.length() > 0){
             // "OK" 접두사가 있다면 제거
             if (command.startsWith("OK")) {
                 command = command.substring(2); // "OK" (2글자) 제거
             }
             getCommand(command);
+        } else {
+            Serial.println("No command received or command was empty.");
         }
         // CALIBRATION -> READY 는 지상국 통해서만
     }
     else if(stage == READY){
+        // Serial.println("Entering READY stage block.");
         // 텔레메트리 값 읽어오기 시작
         updatesensor.run(stage);
 
-        Serial.print("Altemeter: ");
-        Serial.println(alt._data[0]);
+        // Serial.print("Altemeter: ");
+        // Serial.println(alt._data[0]);
 
         // 읽은 텔레메트리 값 전송 및 저장
         // transmit.sendSensorData(stage); // Call directly
@@ -200,6 +225,7 @@ void loop(){
         }
     }
     else if(stage == ASCENDING){
+        Serial.println("Entering ASCENDING stage block.");
         // 텔레메트리 값 읽기 시작
         updatesensor.run(stage);
         // 텔레메트리 값 전송 및 저장
@@ -211,6 +237,7 @@ void loop(){
         
     }
     else if(stage == APOGEE){
+        Serial.println("Entering APOGEE stage block.");
         // 텔레메트리 값 읽기 시작
         updatesensor.run(stage);
         // 낙하산 사출
@@ -229,6 +256,7 @@ void loop(){
         
     }
     else if(stage == DESCENDING){
+        // Serial.println("Entering DESCENDING stage block.");
         // 텔레메트리 값 읽기 시작
         updatesensor.run(stage);
         // 텔레메트리 값 전송 및 저장
@@ -241,9 +269,5 @@ void loop(){
         modem.getModem()->gnss_controller_power_management(1);
     
     }
-    Serial.print("IMU Accel: ");
-    Serial.print(imu._data[0]); Serial.print(", ");
-    Serial.print(imu._data[1]); Serial.print(", ");
-    Serial.println(imu._data[2]);
     delay(10);
 }

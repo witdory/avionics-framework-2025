@@ -14,7 +14,8 @@ public:
 
     void run(){
         if(*_stage == READY){
-            if(_imu->_data[5]>=10){
+            // Z축 가속도가 5.0 m/s^2 이상일 때 ASCENDING으로 전환
+            if(_imu->_data[2] >= 15.0){
                 Serial.println("Stage,ASCENDING");
                 *_stage = ASCENDING;
                 ascendingTime = millis();
@@ -26,24 +27,24 @@ public:
         else if(*_stage == ASCENDING){
             // 낙하산 사출 조건 확인
 
-            // 1. pitch 혹은 yaw 값이 75도 이상 기울었을 때
-            if(abs(int(_imu->_data[1])) >= 75 || abs(int(_imu->_data[2])) >= 75){
+            // 1. pitch 혹은 roll 값이 75도 이상 기울었을 때
+            if(abs(int(_imu->_data[0])) >= 75 || abs(int(_imu->_data[1])) >= 75){
                 Serial.println("Stage,APOGEE");
-                Serial.println(abs(int(_imu->_data[1])));
+                Serial.println(abs(int(_imu->_data[0]))); // Pitch 값 출력
                 *_stage = APOGEE;
                 String log = "APOGEE1\n";
                 _logger->writeData(log);
             }
 
-            // 2. 로켓의 하강이 감지 될 때
-            /*else if(_imu->_data[5]<=-5){
-                Serial3.println("Stage,APOGEE");
+            // 2. 로켓의 하강이 감지 될 때 (Z축 가속도가 -2.0 m/s^2 이하일 때)
+            else if(_imu->_data[2] <= -2.0){
+                Serial.println("Stage,APOGEE");
                 *_stage = APOGEE;
                 String log = "APOGEE2\n";
                 _logger->writeData(log);
-            }*/
+            }
 
-            // 3. 타이머의 값이 발사 후 4초가 지났을때 (발사 시뮬레이터 기반으로 값 조정 예정)
+            // 3. 타이머의 값이 발사 후 8초가 지났을때 (발사 시뮬레이터 기반으로 값 조정 예정)
             else if((millis()-ascendingTime)/1000>8){
                 Serial.println("Stage,APOGEE");
                 *_stage = APOGEE;
