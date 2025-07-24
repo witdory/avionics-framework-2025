@@ -1,84 +1,161 @@
 #pragma once
 
 #include "../lib/sensor.h"
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BNO055.h>
-#include <Wire.h>
-#include <Arduino.h>
+#include <SoftwareSerial.h>
 
 class IMU : public Sensor<float> {
 public:
-    IMU(int8_t sensorMode, uint8_t dataLength)
-        : Sensor(sensorMode, dataLength){} // lastTime은 deltaTime 계산을 위해 사용.
-
-    void init() { // setup() 함수의 기능
-        Serial.println("Bno start");
-        if (!bno.begin()) {
-            while (1);
-        }
-        bno.setAxisRemap(Adafruit_BNO055::adafruit_bno055_axis_remap_config_t(0x09));
-        delay(1000);
-        Serial.println("Bno done");
-        // 내부 클럭 대신 외부 크리스탈을 사용하도록 설정합니다.
-        bno.setExtCrystalUse(true);
-        // 센서를 통해 얻은 데이터를 event 구조체에 저장
-
-        //bno.setAxisSign(Adafruit_BNO055::adafruit_bno055_axis_remap_sign_t(0x00));
-
-        for(int i=0;i<10;i++){
-            readData();
-            delay(100);
-        }
-        
-        delay(1000);
-
-        for(int i=0;i<6;i++){
-            _data[i] = 0.0;
+    // Constructor: sensorMode, dataLength, rxPin, txPin
+    IMU(int8_t sensorMode, uint8_t dataLength, byte rxPin, byte txPin)
+        : Sensor(sensorMode, dataLength), mpu_ss(rxPin, txPin) {
+        // Ensure dataLength is sufficient for Accel (3) + Gyro (3) = 6 floats
+        if (dataLength < 3) {
+            Serial.println("Warning: IMU dataLength is too small for accelerometer data.");
         }
     }
 
-    void readData() { // loop() 함수의 기능
-        //Serial.println("bno 업데이트 시작");
-        if (!bno.getEvent(&event, Adafruit_BNO055::VECTOR_LINEARACCEL)) {
-            return;
+    void init() {
+        mpu_ss.begin(115200);     // Arduino <-> Sensor UART
+        mpu_ss.begin(9600);
+        delay(100);
+        mpu_ss.write('d');  // 센서에게 9600bps 모드로 바꾸라는 명령
+        delay(200);
+        Serial.println("MPU-6050 Accelerometer Calibration starting...");
+        Serial.println("Place the sensor flat and still for 5 seconds...");
+        delay(1000); // User preparation time
+
+        calibrateAccelerometer();    // Call calibration function
+
+        Serial.println("Calibration complete!");
+        Serial.println("Outputting calibrated acceleration values (X, Y, Z)");
+        Serial.println("------------------------------------\n");
+    }
+
+    void readData() {
+        // Serial.println("IMU readData() entered."); // Debug: Function entry
+        // Process incoming data from MPU6050 via SoftwareSerial
+        while (mpu_ss.available()) {
+            byte incomingByte = mpu_ss.read();
+            Serial.print("Received byte: 0x"); // Debug: print every incoming byte
+            if (incomingByte < 0x10) Serial.print("0");
+            Serial.println(incomingByte, HEX);
+
+            if (bufferIndex == 0 && incomingByte == 0x55) {
+                buffer[bufferIndex++] = incomingByte;
+                Serial.println("Start byte 0x55 detected."); // Debug
+            } else if (bufferIndex > 0 && bufferIndex < 11) {
+                buffer[bufferIndex++] = incomingByte;
+                if (bufferIndex >= 11) {
+                    Serial.print("Full packet received. Checking checksum..."); // Debug
+                    if (verifyChecksum(buffer)) {
+                        Serial.println("Checksum OK. Parsing data."); // Debug
+                        parseData(buffer);
+                    } else {
+                        Serial.println("Checksum FAILED."); // Debug
+                    }
+                    bufferIndex = 0; // Reset index for next packet
+                }
+            } else {
+                Serial.print("Invalid byte or sequence. Resetting buffer. Byte: 0x"); // Debug
+                if (incomingByte < 0x10) Serial.print("0");
+                Serial.println(incomingByte, HEX);
+                bufferIndex = 0;
+            }
         }
-        //Serial.println("bno 가속도 데이터 업데이트 완료");
-        // 가속도 데이터
-        float accelX = (float)event.acceleration.x;
-        float accelY = (float)event.acceleration.y;
-        float accelZ = (float)event.acceleration.z;
-
-        //Serial.println("bno 가속도 데이터 변수에 업데이트 완료");
-
-        // 자이로 데이터 (초기 각도 보정)
-        if (!bno.getEvent(&event, Adafruit_BNO055::VECTOR_EULER)) {
-            return;
-        }
-
-        //.println("bno 자이로 데이터 업데이트 완료");
-
-        float gyroX = (float)event.orientation.x;
-        float gyroY = (float)event.orientation.y;
-        float gyroZ = (float)event.orientation.z;
-        //Serial.println("bno 자이로 데이터 변수에 업데이트 완료");
-        // 데이터를 센서 클래스의 data 배열에 저장
-
-        _data[0] = gyroX;
-        _data[1] = gyroY;
-        _data[2] = gyroZ;
-
-        _data[3] = accelX;
-        _data[4] = accelY;
-        _data[5] = accelZ;
-
-        //Serial.println("bno 데이터 배열에 업데이트 완료")
     }
 
 private:
-    // BNO055 default I2C address is 0X28.
-    Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
-    // 가속도계, 자이로스코프, 지자기계 등에서 측정된 데이터를 담고 있는 구조체
-    // BNO055 라이브러리에서 제공
-    sensors_event_t event;
-    float initialOrientation[3];
+    SoftwareSerial mpu_ss; // SoftwareSerial object
+    float acc_offset[3] = {0.0, 0.0, 0.0}; // Calibration offsets
+    byte buffer[11]; // Data reception buffer
+    byte bufferIndex = 0; // Buffer index
+
+    // Calibration function
+    void calibrateAccelerometer() {
+        float acc_sum[3] = {0.0, 0.0, 0.0};
+        int sample_count = 500; // Number of samples for error measurement
+
+        for (int i = 0; i < sample_count; i++) {
+            // Wait until a full 11-byte packet is available
+            unsigned long startTime = millis();
+            while (mpu_ss.available() < 11) {
+                if (millis() - startTime > 1000) { // Timeout after 1 second
+                    Serial.println("Calibration timeout: No enough data from MPU6050.");
+                    return; // Exit calibration if no data
+                }
+            }
+
+            byte temp_buffer[11];
+            for (int j = 0; j < 11; j++) {
+                temp_buffer[j] = mpu_ss.read();
+            }
+
+            if (temp_buffer[0] == 0x55 && temp_buffer[1] == 0x51) { // Only process accelerometer data for calibration
+                // Checksum verification
+                byte sum = 0;
+                for (int k = 0; k < 10; k++) sum += temp_buffer[k];
+                if (sum == temp_buffer[10]) {
+                    acc_sum[0] += (short)(temp_buffer[3] << 8 | temp_buffer[2]);
+                    acc_sum[1] += (short)(temp_buffer[5] << 8 | temp_buffer[4]);
+                    acc_sum[2] += (short)(temp_buffer[7] << 8 | temp_buffer[6]);
+                } else {
+                    i--; // Exclude from sample count if checksum fails
+                }
+            } else {
+                i--; // Exclude if not an accelerometer packet
+            }
+            delay(2); // Small delay between samples
+        }
+
+        // Calculate average offset
+        acc_offset[0] = acc_sum[0] / sample_count;
+        acc_offset[1] = acc_sum[1] / sample_count;
+        // Z-axis offset calculation considering gravity (1g = 2048 raw value)
+        acc_offset[2] = acc_sum[2] / sample_count - 2048.0;
+
+        Serial.print("Calibration offsets (X, Y, Z): "); // Debug: offsets
+        Serial.print(acc_offset[0]); Serial.print(", ");
+        Serial.print(acc_offset[1]); Serial.print(", ");
+        Serial.println(acc_offset[2]);
+    }
+
+    // Checksum verification function
+    bool verifyChecksum(byte* data) {
+        byte sum = 0;
+        for (int i = 0; i < 10; i++) {
+            sum += data[i];
+        }
+        return sum == data[10];
+    }
+
+    // Parse the 11-byte packet and populate _data array
+    void parseData(byte* data) {
+        // Serial.print("Parsing packet type: 0x"); // Debug
+        // if (data[1] < 0x10) Serial.print("0");
+        // Serial.println(data[1], HEX);
+
+        if (data[1] == 0x51) { // Accelerometer data
+            float raw_acc[3];
+            raw_acc[0] = (short)(data[3] << 8 | data[2]);
+            raw_acc[1] = (short)(data[5] << 8 | data[4]);
+            raw_acc[2] = (short)(data[7] << 8 | data[6]);
+
+            Serial.print("Raw Accel: "); // Debug: raw data
+            Serial.print(raw_acc[0]); Serial.print(", ");
+            Serial.print(raw_acc[1]); Serial.print(", ");
+            Serial.println(raw_acc[2]);
+
+            // Apply calibration offset and convert to 'g' units
+            if (_dataLength >= 3) { // Ensure _data array is large enough for accel
+                _data[0] = (raw_acc[0] - acc_offset[0]) / 32768.0 * 16.0;
+                _data[1] = (raw_acc[1] - acc_offset[1]) / 32768.0 * 16.0;
+                _data[2] = (raw_acc[2] - acc_offset[2]) / 32768.0 * 16.0;
+            } else {
+                Serial.println("Error: _data array too small for IMU accelerometer data.");
+            }
+        }
+        // Add more else if blocks for other data types (e.g., 0x53 for angle) if needed.
+    }
+
+        
 };

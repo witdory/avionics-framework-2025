@@ -18,7 +18,7 @@ public:
         delay(100);
         _modem->debugMode(false);
         _modem->module_reboot();
-        delay(10000);
+        delay(5000);
         _modem->powerOn(ON_OFF);
 
         _modem->report_mobile_equipment_error(2);

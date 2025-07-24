@@ -1,6 +1,9 @@
 #pragma once
 #include "../modules.h"
 
+#pragma once
+#include "../modules.h"
+
 class Parachute : public Task{
 public:
     Parachute(MOTOR *motor){

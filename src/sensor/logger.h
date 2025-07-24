@@ -5,9 +5,8 @@
 
 class LOGGER : public Sensor<bool>{
 public:
-    LOGGER(int chipSelect) : Sensor<bool>(READ_AND_WRITE) {
-        _chipSelect = chipSelect;
-        filename = "flightLogger.txt"; // This seems to be unused, consider removing if not needed.
+    LOGGER(int8_t cs_pin) : Sensor<bool>(READ_AND_WRITE), _chipSelect(cs_pin) {
+        filename = "flightLogger.txt";
     }
 
     void init(){

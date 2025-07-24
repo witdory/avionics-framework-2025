@@ -1,25 +1,36 @@
 #include "modules.h"
 #include "task/transmit.h"
+#include <SoftwareSerial.h>
+
+// Pin definitions
+#define MPU_RX 6
+#define MPU_TX 5
+#define BMP_CS 10
+#define SD_CS 8
+#define PARACHUTE_PIN 9
 
 Modem modem;
 HttpClient httpClient(&modem);
 PersistentTCP tcp(&modem, "114.108.80.58", 10025);
 
-ALTEMETER alt(READ_ONLY, 1);
+
+
+ALTEMETER alt(READ_ONLY, 1, BMP_CS);
 GPS gps(READ_ONLY, 2, modem.getModem());
-IMU bno(READ_ONLY, 6);
-MOTOR parachute_motor(WRITE_ONLY, 180, 3);
-LOGGER logger(53);
+IMU imu(READ_ONLY, 3, MPU_RX, MPU_TX);
+MOTOR parachute_motor(WRITE_ONLY, 180, PARACHUTE_PIN);
+LOGGER logger(SD_CS);
 Stage stage;
 
 bool sdDataSentApogee = false;
 
 Parachute parachute(&parachute_motor);
-Transmit transmit(&bno, &alt, &gps, &logger, &tcp);
-UpdateSensor updatesensor(&bno, &alt, &gps);
-StageChecker stagecheck(&bno, &alt, &gps, &stage,&logger);
+Transmit transmit(&imu, &alt, &gps, &logger, &tcp);
+UpdateSensor updatesensor(&imu, &alt, &gps);
+StageChecker stagecheck(&imu, &alt, &gps, &stage,&logger);
 
-// \uc774\uc9c0\uc0c1\uad6d \ucf54\ub4dc
+// 이전 코드...
+
 
 
 unsigned long initTime, currentTime; 
@@ -92,12 +103,13 @@ void setup(){
 
     // 센서들 연결 및 초기화
     Serial.begin(115200);
+    SPI.begin();
     Serial.println("INIT");
     gps.init(); // GPS init is always called
     Serial.println("GPS DONE");
-    // bno.init();
+    imu.init();
     Serial.println("IMU DONE");
-    // alt.init();
+    alt.init();
     Serial.println("ALT DONE");
     logger.init();
     Serial.println("SD DONE");
@@ -170,13 +182,17 @@ void loop(){
     }
     else if(stage == READY){
         // 텔레메트리 값 읽어오기 시작
-        // updatesensor.run(stage);
+        updatesensor.run(stage);
+
+        Serial.print("Altemeter: ");
+        Serial.println(alt._data[0]);
+
         // 읽은 텔레메트리 값 전송 및 저장
         // transmit.sendSensorData(stage); // Call directly
 
         // 만약 가속도 값이 크게 변화하면 상태 ASCENDING으로 바꿈 및 상태 변경 패킷 전송 및 저장
-        // stagecheck.run();
-        stage = ASCENDING;
+        stagecheck.run();
+        // stage = ASCENDING;
         if (stage == ASCENDING){
             Serial.println("ASCENDING TRANSMIT");
             tcp.send("COMMAND_REQUEST:STAGE:ASCENDING");
@@ -223,7 +239,11 @@ void loop(){
         modem.getModem()->gnss_controller_power_management(0);
         transmit.sendSensorData(stage); // Call directly
         modem.getModem()->gnss_controller_power_management(1);
+    
     }
-    // return;
-     delay(10);
+    Serial.print("IMU Accel: ");
+    Serial.print(imu._data[0]); Serial.print(", ");
+    Serial.print(imu._data[1]); Serial.print(", ");
+    Serial.println(imu._data[2]);
+    delay(10);
 }
