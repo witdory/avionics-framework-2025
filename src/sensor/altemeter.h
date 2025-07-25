@@ -39,6 +39,8 @@ public:
         return mean_init_altitude;
     }
 
+    float getInitialAltitude() { return initialAltitude; } // Added getter
+
     void readData() {
         float current_raw_altitude = bmp.readAltitude(SEALEVELPRESSURE_HPA);
         float altitude = current_raw_altitude - initialAltitude;

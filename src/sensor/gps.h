@@ -57,6 +57,9 @@ private:
     ME310* _modem;
     unsigned long lastTime;
 
+    public:
+    ME310* getModem() { return _modem; } // Added public getter for _modem
+
     // $GPSACP: 3723.2475,N,12158.3416,W,... 형식에서 위도/경도 추출
     bool parseLatLng(const char* gpsStr, float& lat, float& lng) {
         if (gpsStr == nullptr) return false;

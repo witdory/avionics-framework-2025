@@ -35,9 +35,9 @@ StageChecker stagecheck(&imu, &alt, &gps, &stage,&logger);
 
 unsigned long initTime, currentTime; 
 
-void getCommand(String command){
-    Serial.print("getCommand called with: ");
-    Serial.println(command);
+inline void getCommand(String command){
+    // Serial.print("getCommand called with: ");
+    // Serial.println(command);
     if (command == "Ready") {
         stage = READY;
         Serial.println("Stage changed to: READY (from Ready command)");
@@ -100,21 +100,26 @@ void setup(){
     // 초기 stage INIT으로 초기화
     stage = INIT;
     // Serial.println("Stage changed to: INIT");
-    pinMode(13, HIGH);
-    digitalWrite(13, HIGH);
+    pinMode(10, OUTPUT); // BMP280 CS
+    pinMode(8, OUTPUT);  // SD카드 CS
+    digitalWrite(10, HIGH); // BMP280 비활성화
+    digitalWrite(8, HIGH);  // SD카드 비활성화
 
     // 센서들 연결 및 초기화
     Serial.begin(115200);
-    SPI.begin();
+    
     Serial.println("INIT");
     gps.init(); // GPS init is always called
     Serial.println("GPS DONE");
     imu.init();
     Serial.println("IMU DONE");
+    digitalWrite(10, HIGH); // BMP280 CS 비활성화
+    // logger.init();
+    Serial.println("SD DONE");
+    digitalWrite(8, HIGH); // SD카드 CS 비활성화
     alt.init();
     Serial.println("ALT DONE");
-    logger.init();
-    Serial.println("SD DONE");
+    
     // parachute_motor.init2();
     Serial.println("MOTOR");
 
@@ -132,8 +137,11 @@ void setup(){
         // httpClient.post(SERVER, 8000, "/state", stageStr.c_str());
         // TCP 연결 성공 후 초기 상태를 PersistentTCP (포트 10025)로 전송
         Serial.println("Sending INIT_STATE:INIT...");
-        tcp.send("INIT_STATE:INIT");
-        Serial.println("INIT_STATE:INIT sent.");
+        if (tcp.send("INIT_STATE:INIT")) {
+            Serial.println("INIT_STATE:INIT sent successfully.");
+        } else {
+            Serial.println("INIT_STATE:INIT send failed.");
+        }
     } else {
         Serial.println("TCP 연결 실패");
     }
@@ -145,64 +153,119 @@ void setup(){
     String log = "INIT\n";
     // logger.writeData(log);
     digitalWrite(13, LOW);
-
-    
-    
 }
-
 
 void loop(){
     Serial.print("Stage: ");
     Serial.println(stage);
     
-    
+    String command; // Declare command here for broader scope
 
     if(stage == INIT){
-        // Serial.println("Entering INIT stage block.");
         updatesensor.run(stage);
 
-        // Serial.println("Sending COMMAND_REQUEST:STAGE:INIT...");
-        tcp.send("COMMAND_REQUEST:STAGE:INIT"); // 서버에 명령 요청 메시지 전송
-        // Serial.println("COMMAND_REQUEST:STAGE:INIT sent. Waiting for response...");
-        String command = tcp.receive();
-        command.trim();
-        // Serial.print("Received command (length ");
-        // Serial.print(command.length());
-        // Serial.print("): <");
-        // Serial.print(command);
-        // Serial.println(">");
-
-        if (command.length() > 0){
-            // "OK" 접두사가 있다면 제거
-            if (command.startsWith("OK")) {
-                command = command.substring(2); // "OK" (2글자) 제거
+        // 1. TCP 연결 확인 및 재연결
+        if (!tcp.isConnected()) {
+            Serial.println("TCP not connected. Attempting to reconnect...");
+            if (!tcp.connect()) {
+                Serial.println("TCP reconnection failed. Skipping loop.");
+                delay(5000);
+                return;
             }
-            getCommand(command);
-        } else {
-            Serial.println("No command received or command was empty.");
+            Serial.println("TCP reconnected successfully.");
         }
-        // INIT -> CALIBRATION 는 지상국 통해서만만
 
+        // 2. 서버에 명령 요청
+        tcp.send("COMMAND_REQUEST:STAGE:INIT");
+        
+        // 3. 서버로부터 응답 수신
+        String raw_response = "";
+        unsigned long receiveStartTime = millis();
+        while (millis() - receiveStartTime < 5000) { // 5초 타임아웃
+            raw_response = tcp.receive();
+            if (raw_response.length() > 0) {
+                break;
+            }
+            delay(100);
+        }
+        
+        // 4. 수신된 데이터에서 실제 명령어 파싱
+        String parsed_command = "";
+        if (raw_response.indexOf("StageChange") != -1) {
+            parsed_command = "StageChange";
+        } else if (raw_response.indexOf("Ready") != -1) {
+            parsed_command = "Ready";
+        } else if (raw_response.indexOf("Injection") != -1) {
+            parsed_command = "Injection";
+        } else if (raw_response.indexOf("OK") != -1) {
+            parsed_command = "OK";
+        }
+        
+        Serial.print("Parsed command: '"); Serial.print(parsed_command); Serial.println("'");
+
+        // 5. 파싱된 명령어로 로직 처리
+        if (parsed_command.length() > 0) {
+            if (parsed_command != "OK") {
+                getCommand(parsed_command);
+            } else {
+                Serial.println("Received OK ack, holding stage.");
+            }
+        } else {
+            Serial.println("No valid command keyword found in response.");
+        }
     }
     else if(stage == CALIBRATION){
-        // updatesensor.calibration(); //코드 채워야함
-        // transmit.sendSensorData(stage); // Call directly
+        updatesensor.run(stage);
 
-        tcp.send("COMMAND_REQUEST:STAGE:CALIBRATION"); // 서버에 명령 요청 메시지 전송
-        String command = tcp.receive();
-        command.trim();
-        
-
-        if (command.length() > 0){
-            // "OK" 접두사가 있다면 제거
-            if (command.startsWith("OK")) {
-                command = command.substring(2); // "OK" (2글자) 제거
+        // 1. TCP 연결 확인 및 재연결
+        if (!tcp.isConnected()) {
+            Serial.println("TCP not connected. Attempting to reconnect...");
+            if (!tcp.connect()) {
+                Serial.println("TCP reconnection failed. Skipping loop.");
+                delay(5000);
+                return;
             }
-            getCommand(command);
-        } else {
-            Serial.println("No command received or command was empty.");
+            Serial.println("TCP reconnected successfully.");
         }
-        // CALIBRATION -> READY 는 지상국 통해서만
+
+        // 2. 서버에 명령 요청
+        tcp.send("COMMAND_REQUEST:STAGE:CALIBRATION");
+        
+        // 3. 서버로부터 응답 수신
+        String raw_response = "";
+        unsigned long receiveStartTime = millis();
+        while (millis() - receiveStartTime < 5000) { // 5초 타임아웃
+            raw_response = tcp.receive();
+            if (raw_response.length() > 0) {
+                break;
+            }
+            delay(100);
+        }
+        
+        // 4. 수신된 데이터에서 실제 명령어 파싱
+        String parsed_command = "";
+        if (raw_response.indexOf("StageChange") != -1) {
+            parsed_command = "StageChange";
+        } else if (raw_response.indexOf("Ready") != -1) {
+            parsed_command = "Ready";
+        } else if (raw_response.indexOf("Injection") != -1) {
+            parsed_command = "Injection";
+        } else if (raw_response.indexOf("OK") != -1) {
+            parsed_command = "OK";
+        }
+        
+        Serial.print("Parsed command: '"); Serial.print(parsed_command); Serial.println("'");
+
+        // 5. 파싱된 명령어로 로직 처리
+        if (parsed_command.length() > 0) {
+            if (parsed_command != "OK") {
+                getCommand(parsed_command);
+            } else {
+                Serial.println("Received OK ack, holding stage.");
+            }
+        } else {
+            Serial.println("No valid command keyword found in response.");
+        }
     }
     else if(stage == READY){
         // Serial.println("Entering READY stage block.");
@@ -220,8 +283,21 @@ void loop(){
         // stage = ASCENDING;
         if (stage == ASCENDING){
             Serial.println("ASCENDING TRANSMIT");
-            tcp.send("COMMAND_REQUEST:STAGE:ASCENDING");
-            Serial.println("ASCENDING TRANSMITTED");
+            Serial.print("TCP Connected: "); Serial.println(tcp.isConnected() ? "true" : "false");
+            if (!tcp.isConnected()) {
+                Serial.println("TCP not connected. Attempting to reconnect...");
+                if (!tcp.connect()) {
+                    Serial.println("TCP reconnection failed. Skipping send/receive.");
+                    delay(5000); // Wait before next attempt
+                    return; // Skip current loop iteration
+                }
+                Serial.println("TCP reconnected successfully.");
+            }
+            if (tcp.send("COMMAND_REQUEST:STAGE:ASCENDING")) {
+                Serial.println("ASCENDING TRANSMITTED successfully.");
+            } else {
+                Serial.println("ASCENDING TRANSMITTED failed.");
+            }
         }
     }
     else if(stage == ASCENDING){
@@ -231,6 +307,16 @@ void loop(){
         // 텔레메트리 값 전송 및 저장
         
         // 읽은 텔레메트리 값 전송 및 저장
+        Serial.print("TCP Connected: "); Serial.println(tcp.isConnected() ? "true" : "false");
+        if (!tcp.isConnected()) {
+            Serial.println("TCP not connected. Attempting to reconnect...");
+            if (!tcp.connect()) {
+                Serial.println("TCP reconnection failed. Skipping send/receive.");
+                delay(5000); // Wait before next attempt
+                return; // Skip current loop iteration
+            }
+            Serial.println("TCP reconnected successfully.");
+        }
         transmit.sendSensorData(stage); // Call directly
         Serial.println("ASCENDING");
         stagecheck.run();
@@ -246,8 +332,10 @@ void loop(){
         // APOGEE 진입 시 SD 카드 데이터 전송 (한 번만 실행)
         if (!sdDataSentApogee) {
             Serial.println("상승 데이터 전송");
-            transmit.sendSdCardDataToServer();
+            // transmit.sendSdCardDataToServer();
             sdDataSentApogee = true;
+            stage = DESCENDING;
+            stagecheck.setDescendingStartTime(millis()); // Initialize descendingStartTime here
         }
         transmit.sendSensorData(stage); // Call directly
 
@@ -260,13 +348,44 @@ void loop(){
         // 텔레메트리 값 읽기 시작
         updatesensor.run(stage);
         // 텔레메트리 값 전송 및 저장
+        Serial.print("TCP Connected: "); Serial.println(tcp.isConnected() ? "true" : "false");
+        if (!tcp.isConnected()) {
+            Serial.println("TCP not connected. Attempting to reconnect...");
+            if (!tcp.connect()) {
+                Serial.println("TCP reconnection failed. Skipping send/receive.");
+                delay(5000); // Wait before next attempt
+                return; // Skip current loop iteration
+            }
+            Serial.println("TCP reconnected successfully.");
+        }
         transmit.sendSensorData(stage); // Call directly
+        stagecheck.run();
     }
     else if(stage == RETRIEVAL){
         updatesensor.run(stage);
+        
         modem.getModem()->gnss_controller_power_management(0);
         transmit.sendSensorData(stage); // Call directly
         modem.getModem()->gnss_controller_power_management(1);
+
+        // GPS 데이터 획득 및 전송
+        Serial.println("RETRIEVAL: Attempting to get GPS data...");
+        me310::ME310::return_t rc_gps = gps.getModem()->gps_get_acquired_position();
+        if (rc_gps == me310::ME310::RETURN_VALID) {
+            String gpsData = (String)gps.getModem()->buffer_cstr_raw();
+            Serial.print("RETRIEVAL: GPS Data: "); Serial.println(gpsData);
+            if (tcp.isConnected()) {
+                if (tcp.send(("GPS_DATA:" + gpsData).c_str())) {
+                    Serial.println("RETRIEVAL: GPS data sent successfully.");
+                } else {
+                    Serial.println("RETRIEVAL: GPS data send failed.");
+                }
+            } else {
+                Serial.println("RETRIEVAL: TCP not connected, cannot send GPS data.");
+            }
+        } else {
+            Serial.print("RETRIEVAL: Failed to get GPS data. RC: "); Serial.println(rc_gps);
+        }
     
     }
     delay(10);

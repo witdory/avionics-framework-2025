@@ -51,18 +51,19 @@ public:
         if(_cnt>=30){
             _cnt = 0;
             Serial.println("Transmit: Writing log to SD card.");
-            _logger->writeData(log);
+            // _logger->writeData(log);
             // ASCENDING 단계에서는 서버로 전송하지 않음
-            if (currentStage >= APOGEE){
-                _tcp->send(("SENSOR_DATA:" + log).c_str()); // SENSOR_DATA 접두사 추가
-                _tcp->receive(); // 응답 소비
-            }
+            // if (currentStage >= APOGEE){
+            //     _tcp->send(("SENSOR_DATA:" + log).c_str()); // SENSOR_DATA 접두사 추가
+            //     _tcp->receive(); // 응답 소비
+            // }
             log = ""; // SD 카드에 쓴 후 버퍼 비우기
         }
     }
 
     void sendSdCardDataToServer() {
         Serial.println("Transmit: Starting SD card data transfer to server.");
+        _tcp->send("ASCENDING_DATA: ");
         if (_logger->openLogFileForReading()) {
             String dataChunk;
             const int linesPerChunk = 20; // 10~30줄 사이, 20줄로 설정
