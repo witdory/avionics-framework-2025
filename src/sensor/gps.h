@@ -61,18 +61,29 @@ private:
     ME310* getModem() { return _modem; } // Added public getter for _modem
 
     // $GPSACP: 3723.2475,N,12158.3416,W,... 형식에서 위도/경도 추출
+    // gps.h 파일 안에 있는 parseLatLng 함수를 이걸로 교체하세요.
     bool parseLatLng(const char* gpsStr, float& lat, float& lng) {
         if (gpsStr == nullptr) return false;
+
+        // ':' 문자 뒤부터 파싱 시작
         const char* p = strchr(gpsStr, ':');
         if (!p) return false;
+
         float latRaw, lngRaw;
         char latDir, lngDir;
-        int n = sscanf(p + 1, "%f,%c,%f,%c", &latRaw, &latDir, &lngRaw, &lngDir);
+
+        // [수정된 부분]
+        // sscanf 서식을 변경하여 맨 앞의 시간 데이터(%*f)는 읽기만 하고 무시(저장 안함)하도록 함
+        // 이렇게 하면 위도, 경도 값을 올바른 변수에 저장할 수 있음
+        int n = sscanf(p + 1, " %*f,%f,%c,%f,%c", &latRaw, &latDir, &lngRaw, &lngDir);
+        
+        // 위도, 남/북, 경도, 동/서 4개 필드가 모두 정상적으로 읽혔는지 확인
         if (n == 4) {
             lat = convertToDecimal(latRaw, latDir);
             lng = convertToDecimal(lngRaw, lngDir);
             return true;
         }
+        
         return false;
     }
 
