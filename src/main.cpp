@@ -362,31 +362,78 @@ void loop(){
         stagecheck.run();
     }
     else if(stage == RETRIEVAL){
-        updatesensor.run(stage);
-        
-        modem.getModem()->gnss_controller_power_management(0);
-        transmit.sendSensorData(stage); // Call directly
-        modem.getModem()->gnss_controller_power_management(1);
+        // 이 스테이지에 처음 진입했을 때만 초기화를 실행하기 위한 static 변수
+        static bool retrieval_initialized = false;
 
-        // GPS 데이터 획득 및 전송
-        Serial.println("RETRIEVAL: Attempting to get GPS data...");
+        // 초기화가 아직 안 됐다면 GPS 전원을 켠다.
+        if (!retrieval_initialized) {
+            Serial.println("--- Initializing RETRIEVAL Stage ---");
+            Serial.println("Powering ON GNSS controller (will stay on)...");
+            gps.getModem()->gnss_controller_power_management(1);
+            retrieval_initialized = true; // 초기화 완료 플래그 설정
+            delay(1000); // 모듈 전원이 켜질 때까지 잠시 대기
+        }
+
+        Serial.println("--- RETRIEVAL Cycle Start ---");
+
+        // 1. GPS 데이터 수신 시도
+        String gpsFixData = "";
+        bool gpsSuccess = false;
+
+        Serial.println("Attempting to get GPS fix...");
         me310::ME310::return_t rc_gps = gps.getModem()->gps_get_acquired_position();
+        
         if (rc_gps == me310::ME310::RETURN_VALID) {
-            String gpsData = (String)gps.getModem()->buffer_cstr_raw();
-            Serial.print("RETRIEVAL: GPS Data: "); Serial.println(gpsData);
-            if (tcp.isConnected()) {
-                if (tcp.send(("GPS_DATA:" + gpsData).c_str())) {
-                    Serial.println("RETRIEVAL: GPS data sent successfully.");
-                } else {
-                    Serial.println("RETRIEVAL: GPS data send failed.");
+            String raw_data = (String)gps.getModem()->buffer_cstr(1);
+            int colon_index = raw_data.indexOf(':');
+            // 콜론(:) 뒤에 좌표 데이터가 있는지 확인
+            if (colon_index != -1 && raw_data.charAt(colon_index + 1) != ',') {
+                Serial.print("GPS Fix Acquired: ");
+                Serial.println(raw_data);
+                gpsFixData = raw_data;
+                gpsSuccess = true;
+            }
+        }
+
+        // 2. 수신 성공 시에만 10진수 좌표로 변환하고 서버로 전송
+        if (gpsSuccess) {
+            float latitude, longitude;
+            if (gps.parseLatLng(gpsFixData.c_str(), latitude, longitude)) {
+                
+                Serial.print("==> Converted to Decimal Degrees: ");
+                Serial.print(latitude, 6);
+                Serial.print(", ");
+                Serial.println(longitude, 6);
+
+                String payload = "GPS_DATA:" + String(latitude, 6) + "," + String(longitude, 6);
+
+                if (!tcp.isConnected()) {
+                    Serial.println("TCP not connected. Reconnecting...");
+                    tcp.connect();
                 }
+                
+                if (tcp.isConnected()) {
+                    Serial.print("Sending to server: ");
+                    Serial.println(payload);
+                    if (tcp.send(payload.c_str())) {
+                        Serial.println("GPS data sent successfully.");
+                    } else {
+                        Serial.println("GPS data send failed.");
+                    }
+                } else {
+                    Serial.println("Cannot send GPS data, TCP connection failed.");
+                }
+
             } else {
-                Serial.println("RETRIEVAL: TCP not connected, cannot send GPS data.");
+                Serial.println("Failed to parse the acquired GPS data string.");
             }
         } else {
-            Serial.print("RETRIEVAL: Failed to get GPS data. RC: "); Serial.println(rc_gps);
+            Serial.println("No GPS fix yet. Will try again in the next cycle.");
         }
-    
+        
+        // 3. 다음 위치 보고까지 대기 (GPS는 계속 켜져 있음)
+        Serial.println("Waiting 30 seconds for next retrieval cycle...");
+        delay(5000); 
     }
     delay(10);
 }
